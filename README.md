@@ -2,7 +2,12 @@
 
 **Prompt a game. Launch a coin. Every run pumps an unruggable floor.**
 
-Built for Monad Blitz Mumbai.
+Built for Monad Blitz Mumbai, now being rebuilt on NEAR for the NEAR Hackathon.
+
+> **NEAR rebuild in progress.** The Solidity contracts have been replaced by Rust contracts in
+> [`near/`](near/): a factory and one game contract per game, deployed on NEAR testnet
+> (`factory.popnear.testnet`). The web app below still talks to Monad until the port lands.
+> Hackathon work starts at the `pre-hackathon` tag; [NOTES.md](NOTES.md) tracks it.
 
 | | |
 | --- | --- |
@@ -39,8 +44,9 @@ Each action that touches the vault keeps `vault ÷ supply` the same or raises it
 | **Redeem** | Burns coins and pays their exact share of the vault | = |
 | **Creator payout** | Paid from the separate MON escrow, never from the vault | = |
 
-Tested in `contracts/test/ProofOfPlay.test.ts`: **7 Hardhat tests**, including a fuzz test of **60 random
-plays, buys and redeems** where the floor never drops.
+On NEAR this is tested in `near/`: unit tests (including the 7 original Hardhat scenarios rewritten in
+Rust), a floor simulation of thousands of random steps plus 60-day crowd scenarios
+([results](near/simulation/RESULTS.md)), and sandbox tests with real accounts.
 
 ### Economics
 
@@ -108,8 +114,8 @@ flowchart LR
 
 | Path | What |
 | --- | --- |
-| `contracts/contracts/` | Solidity: `GameFactory`, `GameToken`, `TreasuryVault`, `SessionManager`, `BondingCurve` (OpenZeppelin) |
-| `contracts/test/` | Hardhat tests (viem toolbox), including the floor-never-drops fuzz test |
+| `near/game/`, `near/factory/` | Rust contracts (near-sdk): one game contract per game (coin, vault, runs, curve) and the factory |
+| `near/tests/`, `near/simulation/` | Sandbox tests with real accounts; floor simulation results |
 | `web/src/app/` | Next.js 15 app: home, `create`, `game`, plus API routes |
 | `web/src/app/api/` | `generate` (Claude), `config` + `asset` (Upstash Redis), `sign-session` (score signer) |
 | `web/scripts/` | Seeding and demo helpers (below) |
@@ -118,9 +124,8 @@ flowchart LR
 ## Setup
 
 ```bash
-# contracts
-cd contracts && npm install && cp .env.example .env
-npx hardhat test
+# contracts (see near/game/README.md)
+cd near && cargo test
 
 # web
 cd ../web && npm install && cp .env.example .env.local

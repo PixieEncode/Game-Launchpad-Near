@@ -1,6 +1,8 @@
 [workspace]
 resolver = "2"
-members = ["game", "factory"]
+members = ["game", "factory", "tests"]
+# The sandbox tests need a Linux or macOS NEAR sandbox; run them with `-p pop-sandbox-tests`.
+default-members = ["game", "factory"]
 
 [profile.release]
 codegen-units = 1

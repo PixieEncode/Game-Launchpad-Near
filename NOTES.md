@@ -15,6 +15,7 @@ version. Only changes after that tag are hackathon work.
 | [popnear-player.testnet](https://testnet.nearblocks.io/address/popnear-player.testnet) | Test player |
 | [factory.popnear.testnet](https://testnet.nearblocks.io/address/factory.popnear.testnet) | Factory with the standard params (300-run mining) |
 | [demo.popnear.testnet](https://testnet.nearblocks.io/address/demo.popnear.testnet) | Small-cap factory: mining closes after 10 runs, for demos |
+| [popnear-funds.testnet](https://testnet.nearblocks.io/address/popnear-funds.testnet) | Faucet account only: its 9.95 NEAR went to `popnear.testnet` ([6K5eEoX6…](https://testnet.nearblocks.io/txns/6K5eEoX6dC3GGj17dXVR5hPdChn1qLhdEKdVeC8t1FJN)) |
 
 Both were created through the testnet faucet with 10 NEAR each. Their keys
 live in `~/.near-credentials/testnet/` on the developer's machine, never in
@@ -46,7 +47,9 @@ which is never committed.
 | uint | 0.10 | `near/game` | 256-bit integers for overflow-safe maths |
 | ed25519-dalek | 2 (tests only) | `near/game` | Signs scores in unit tests |
 | near-cli-rs | 0.31.1 (tool) | dev machine | Testnet accounts and deploys |
-| cargo-near | 0.23.0 (tool) | dev machine | Builds contract WASM |
+| cargo-near | 0.23.0 (tool) | dev machine, CI | Builds contract WASM |
+| near-workspaces | 0.24 | `near/tests` | Sandbox tests on a local NEAR node |
+| tokio, anyhow, serde_json, sha2, hex | 1, 1, 1, 0.10, 0.4 | `near/tests` | Async runtime and helpers for the sandbox tests |
 
 ## AI-generated code
 
@@ -55,3 +58,4 @@ which is never committed.
 | Phase 0 repo setup: LICENSE, this file, folder stubs | `LICENSE`, `NOTES.md`, `near/`, `sim/`, `verifier/` | Claude Code (Claude Opus 5.5) |
 | Phase 1 game contract and its unit tests | `near/Cargo.toml`, `near/game/` | Claude Code (Claude Opus 5.5) |
 | Phase 2 factory contract, its tests, testnet deploy | `near/factory/`, `web/src/lib/contracts/deployment.testnet.json` | Claude Code (Claude Opus 5.5) |
+| Phase 3 floor simulation, scenario runner, sandbox tests, CI | `near/game/src/tests/sim.rs`, `near/simulation/`, `near/tests/`, `.github/workflows/` | Claude Code (Claude Opus 5.5) |

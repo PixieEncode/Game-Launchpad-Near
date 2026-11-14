@@ -3,6 +3,8 @@
 //! asserts afterwards that vault ÷ supply did not fall.
 
 use super::*;
+
+mod sim;
 use ed25519_dalek::{Signer, SigningKey};
 use near_sdk::mock::MockAction;
 use near_sdk::test_utils::{get_created_receipts, get_logs, VMContextBuilder};
@@ -62,6 +64,9 @@ impl T {
         let key = SigningKey::from_bytes(&[7u8; 32]);
         let pk = score::to_hex(&key.verifying_key().to_bytes());
         let now_ms = 1_800_000_000_000;
+        // A fresh game starts with empty storage: the mocked runtime otherwise keeps the
+        // previous game's state when several games run on one thread.
+        near_sdk::mock::with_mocked_blockchain(|b| drop(b.take_storage()));
         testing_env!(VMContextBuilder::new()
             .current_account_id(acc(GAME))
             .predecessor_account_id(acc(FACTORY))
