@@ -5,7 +5,9 @@
   "factory": "factory.popnear.testnet",
   "demoFactory": "demo.popnear.testnet",
   "owner": "popnear.testnet",
-  "verifierPk": "06727a24c2b65be12b5f9da3517e93ef6e2ee1f699f8ab15d2cdc546deea3b81",
-  "verifierKind": "dev",
-  "gameCodeSha256": "8c44a2b070cf6b5c7546778ac51947ba0f8cd37d185504894e90336bcaa42e5f"
+  "verifierPk": "7b2bfc37d4edcbfda5415cae6300e8b5d9fa7e9251618ed701f6190a3df093ee",
+  "verifierKind": "outlayer",
+  "gameCodeSha256": "8c44a2b070cf6b5c7546778ac51947ba0f8cd37d185504894e90336bcaa42e5f",
+  "devVerifierPk": "06727a24c2b65be12b5f9da3517e93ef6e2ee1f699f8ab15d2cdc546deea3b81",
+  "outlayerProject": "popnear.testnet/pop-verifier"
 }

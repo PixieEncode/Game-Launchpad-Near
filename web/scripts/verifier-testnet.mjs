@@ -133,7 +133,9 @@ const sigA = await sign(gameA, runA, played.log);
 console.log(`run A: session ${runA.session_id}, seed ${runA.seed}, score ${sigA.score} in ${sigA.ticks} ticks (${sigA.verifier} verifier)`);
 
 const rows = [];
-rows.push(["Submitted faster than the run could be played", await endRun(gameA, runA.session_id, sigA)]);
+// With OutLayer the signature itself takes longer than a short run, so this
+// attempt is only meaningful with the dev verifier (SKIP_TOO_FAST=1 skips it).
+if (!process.env.SKIP_TOO_FAST) rows.push(["Submitted faster than the run could be played", await endRun(gameA, runA.session_id, sigA)]);
 const wait = runA.startedAt + Math.ceil((sigA.ticks * 1000) / 60) + 2000 - Date.now();
 if (wait > 0) await sleep(wait);
 rows.push(["Raised score (+10), same signature", await endRun(gameA, runA.session_id, { ...sigA, score: sigA.score + 10 })]);

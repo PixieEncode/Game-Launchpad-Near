@@ -424,8 +424,8 @@ fn end_run_checks_the_run_length_against_real_time() {
     t.ctx("alice.testnet", 0);
     let e = fails(|| t.game.end_run(run.session_id, 10, 100, LOG_HASH.into(), sig.clone()));
     assert!(e.contains("Bad signature"), "{e}");
-    // Submitted more than 2 minutes after the run would have ended: too late.
-    t.advance(7 + 121);
+    // Submitted more than 5 minutes after the run would have ended: too late.
+    t.advance(7 + 301);
     t.ctx("alice.testnet", 0);
     let e = fails(|| t.game.end_run(run.session_id, 10, 600, LOG_HASH.into(), sig.clone()));
     assert!(e.contains("too late"), "{e}");

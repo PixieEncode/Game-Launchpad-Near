@@ -105,11 +105,21 @@ export function scoreDigest(f: {
 
 // ------------------------------------------------------------ OutLayer path
 
+/** How long to wait for OutLayer (runs can queue for a minute or more on testnet). */
+const OUTLAYER_WAIT_MS = 4 * 60 * 1000;
+const OUTLAYER_POLL_MS = 3000;
+
+/**
+ * Async call, then poll `/calls/{id}`: a synchronous call can sit in OutLayer's
+ * queue past its gateway's ~2-minute timeout even though the run takes < 1 s.
+ */
 async function viaOutlayer(req: VerifyRequest, paymentKey: string): Promise<Verified> {
+  const headers = { "Content-Type": "application/json", "X-Payment-Key": paymentKey };
   const res = await fetch(`${OUTLAYER_API}/call/${OUTLAYER_PROJECT}`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", "X-Payment-Key": paymentKey },
+    headers,
     body: JSON.stringify({
+      async: true,
       input: {
         op: "verify",
         game: req.game,
@@ -122,8 +132,16 @@ async function viaOutlayer(req: VerifyRequest, paymentKey: string): Promise<Veri
       },
     }),
   });
-  const body = await res.json().catch(() => null);
-  if (!res.ok || !body) throw new Error(`OutLayer call failed: HTTP ${res.status}`);
+  let body = await res.json().catch(() => null);
+  if (!res.ok || !body?.call_id) throw new Error(`OutLayer call failed: HTTP ${res.status}`);
+  const deadline = Date.now() + OUTLAYER_WAIT_MS;
+  while (body.status !== "completed" && body.status !== "failed") {
+    if (Date.now() > deadline) throw new Error("OutLayer did not finish in time; try again");
+    await new Promise((r) => setTimeout(r, OUTLAYER_POLL_MS));
+    const poll = await fetch(`${OUTLAYER_API}/calls/${body.call_id}`, { headers });
+    if (poll.ok) body = await poll.json();
+  }
+  if (body.status === "failed") throw new Error(`OutLayer run failed: ${body.error ?? "unknown error"}`);
   const out = typeof body.output === "string" ? JSON.parse(body.output) : body.output;
   if (!out?.ok) throw new Error(`Verifier refused the run: ${out?.error ?? "no output"}`);
   return {

@@ -77,7 +77,7 @@ impl Params {
             curve_slope: U128(MILLI / 10 / 1_000),
             floor_premium_bps: 1_000,
             milestones: [3, 10, 25, 50],
-            max_run_secs: 12 * 60,
+            max_run_secs: 15 * 60,
         }
     }
 }

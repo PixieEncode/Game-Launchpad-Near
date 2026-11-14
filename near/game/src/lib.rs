@@ -57,7 +57,9 @@ const GAS_FOR_PARENT_CALLBACK: Gas = Gas::from_tgas(5);
 /// 10 minutes at 60 ticks per second: the longest run the game core allows.
 const MAX_RUN_TICKS: u32 = 36_000;
 /// Time allowed after a run's last tick to verify it and submit `end_run`.
-const END_GRACE_MS: u64 = 120_000;
+/// OutLayer's testnet queue was seen to take 70-140 s; 5 minutes leaves margin
+/// while still giving a bot little time to search for perfect inputs.
+const END_GRACE_MS: u64 = 300_000;
 
 #[derive(BorshSerialize, BorshStorageKey)]
 #[borsh(crate = "near_sdk::borsh")]
@@ -121,7 +123,7 @@ impl Params {
             curve_slope: U128(MILLI_NEAR / 10 / 1_000), // +0.0001 NEAR per 1,000 coins sold
             floor_premium_bps: 1_000,               // floor + 10%
             milestones: [3, 10, 25, 50],
-            max_run_secs: 12 * 60, // 10-minute cap on a run plus a 2-minute grace
+            max_run_secs: 15 * 60, // 10-minute cap on a run plus the 5-minute end_run grace
         }
     }
 

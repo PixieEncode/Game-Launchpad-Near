@@ -16,6 +16,7 @@ version. Only changes after that tag are hackathon work.
 | [factory.popnear.testnet](https://testnet.nearblocks.io/address/factory.popnear.testnet) | Factory with the standard params (300-run mining) |
 | [demo.popnear.testnet](https://testnet.nearblocks.io/address/demo.popnear.testnet) | Small-cap factory: mining closes after 10 runs, for demos |
 | [popnear-funds.testnet](https://testnet.nearblocks.io/address/popnear-funds.testnet) | Faucet account only: its 9.95 NEAR went to `popnear.testnet` ([6K5eEoX6…](https://testnet.nearblocks.io/txns/6K5eEoX6dC3GGj17dXVR5hPdChn1qLhdEKdVeC8t1FJN)) |
+| popnear-funds2.testnet, popnear-funds3.testnet | Faucet accounts only: 9.95 NEAR each went to `popnear.testnet` (Phase 4 and 5 games) |
 
 Both were created through the testnet faucet with 10 NEAR each. Their keys
 live in `~/.near-credentials/testnet/` on the developer's machine, never in
@@ -57,9 +58,40 @@ through the same WASM core the browser uses, signs it through
 | Honest run (13 points, 1,226 ticks) | accepted, mined 17.28 coins |
 
 The verifier is deployed on OutLayer testnet as `popnear.testnet/pop-verifier`
-(wasm sha256 `1225c52e…5a18e`). `vchk-3.factory…` and `vchkb-1.demo…` were
+(wasm sha256 `1225c52e…5a18e`). Its enclave key is
+`7b2bfc37d4edcbfda5415cae6300e8b5d9fa7e9251618ed701f6190a3df093ee`, read from
+the program itself over HTTPS. Through OutLayer it replayed a recorded flappy
+run to the same 123 points in 8,386 ticks, and its signature verifies against
+that key. Both factories now launch new games with this key; games launched
+earlier keep the development key (`06727a24…ea3b81`) and are "dev verifier"
+games. OutLayer runs take under 0.5 s but can wait a minute or more in the
+testnet queue, so `/api/verify-run` calls it asynchronously and polls. `vchk-3.factory…` and `vchkb-1.demo…` were
 launched with a game build missing the `pop-score-v1` prefix; they accept no
 scores and are not used.
+
+### With the OutLayer verifier
+
+The same check on games launched with the enclave key, signed through
+OutLayer (`SKIP_TOO_FAST=1 node scripts/verifier-testnet.mjs`), on
+`vchk-6.factory.popnear.testnet` and `vchkb-4.demo.popnear.testnet`:
+
+| Attempt | Result |
+| --- | --- |
+| Raised score (+10), same signature | refused: "Bad signature" |
+| Edited input log (another log hash) | refused: "Bad signature" |
+| Shorter run claimed (ticks − 60) | refused: "Bad signature" |
+| Run A's signature on another session of the same game | refused: "Bad signature" |
+| Run A's signature on a different game | refused: "Bad signature" |
+| Honest run (15 points, 1,240 ticks) | accepted, mined 74.37 coins |
+
+The "submitted too fast" attempt is skipped here: OutLayer's signature takes
+longer than a 20-second run, so it cannot arrive early. The time check does
+not depend on the verifier and was shown above with the dev key.
+
+The first attempt (`vchk-5`, `vchkb-3`) used a 2-minute `end_run` grace; the
+OutLayer queue took longer, so even the honest run arrived "too late". The
+grace is now 5 minutes and runs expire after 15 (`max_run_secs` 900); those two
+games keep the old window.
 
 ## Libraries added during the hackathon
 
