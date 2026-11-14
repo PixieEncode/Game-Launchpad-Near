@@ -127,6 +127,10 @@ impl T {
     }
 
     fn sign_for(&self, game: &str, player: &str, session_id: u64, seed: u32, score: u32) -> String {
+        self.sign_ticks(game, player, session_id, seed, score, 0)
+    }
+
+    fn sign_ticks(&self, game: &str, player: &str, session_id: u64, seed: u32, score: u32, ticks: u32) -> String {
         let digest = score::score_digest(
             &acc(game),
             &acc(player),
@@ -134,6 +138,7 @@ impl T {
             seed,
             &score::hex32(CONFIG_HASH),
             score,
+            ticks,
             &score::hex32(LOG_HASH),
         );
         score::to_hex(&self.key.sign(&digest).to_bytes())
@@ -161,7 +166,7 @@ impl T {
     fn end(&mut self, who: &str, run: &StartedRun, score: u32) -> u128 {
         let sig = self.sign(who, run, score);
         self.ctx(who, 0);
-        let mined = self.game.end_run(run.session_id, score, LOG_HASH.into(), sig).0;
+        let mined = self.game.end_run(run.session_id, score, 0, LOG_HASH.into(), sig).0;
         self.check_floor("end_run");
         mined
     }
@@ -343,17 +348,17 @@ fn rejects_forged_scores_other_players_sessions_and_double_claims() {
     let sig = t.sign("alice.testnet", &run, 10);
     // A raised score.
     t.ctx("alice.testnet", 0);
-    let e = fails(|| t.game.end_run(run.session_id, 999, LOG_HASH.into(), sig.clone()));
+    let e = fails(|| t.game.end_run(run.session_id, 999, 0, LOG_HASH.into(), sig.clone()));
     assert!(e.contains("Bad signature"), "{e}");
     // Another player's session.
     t.ctx("bob.testnet", 0);
-    let e = fails(|| t.game.end_run(run.session_id, 10, LOG_HASH.into(), sig.clone()));
+    let e = fails(|| t.game.end_run(run.session_id, 10, 0, LOG_HASH.into(), sig.clone()));
     assert!(e.contains("Not your session"), "{e}");
     // The honest claim, then the same claim again.
     t.ctx("alice.testnet", 0);
-    t.game.end_run(run.session_id, 10, LOG_HASH.into(), sig.clone());
+    t.game.end_run(run.session_id, 10, 0, LOG_HASH.into(), sig.clone());
     t.ctx("alice.testnet", 0);
-    let e = fails(|| t.game.end_run(run.session_id, 10, LOG_HASH.into(), sig.clone()));
+    let e = fails(|| t.game.end_run(run.session_id, 10, 0, LOG_HASH.into(), sig.clone()));
     assert!(e.contains("Unknown or finished session"), "{e}");
 }
 
@@ -377,7 +382,7 @@ fn end_run_rejects_a_signature_for_a_different_game_account() {
     let run = t.start("alice.testnet");
     let sig = t.sign_for("hop-2.factory.testnet", "alice.testnet", run.session_id, run.seed, 10);
     t.ctx("alice.testnet", 0);
-    let e = fails(|| t.game.end_run(run.session_id, 10, LOG_HASH.into(), sig));
+    let e = fails(|| t.game.end_run(run.session_id, 10, 0, LOG_HASH.into(), sig));
     assert!(e.contains("Bad signature"), "{e}");
 }
 
@@ -388,11 +393,11 @@ fn end_run_rejects_a_different_log_or_seed() {
     let sig = t.sign("alice.testnet", &run, 10);
     t.ctx("alice.testnet", 0);
     let other_log = "2222222222222222222222222222222222222222222222222222222222222222";
-    let e = fails(|| t.game.end_run(run.session_id, 10, other_log.into(), sig));
+    let e = fails(|| t.game.end_run(run.session_id, 10, 0, other_log.into(), sig));
     assert!(e.contains("Bad signature"), "{e}");
     let wrong_seed = t.sign_for(GAME, "alice.testnet", run.session_id, run.seed ^ 1, 10);
     t.ctx("alice.testnet", 0);
-    let e = fails(|| t.game.end_run(run.session_id, 10, LOG_HASH.into(), wrong_seed));
+    let e = fails(|| t.game.end_run(run.session_id, 10, 0, LOG_HASH.into(), wrong_seed));
     assert!(e.contains("Bad signature"), "{e}");
 }
 
@@ -401,8 +406,57 @@ fn end_run_rejects_malformed_hex() {
     let mut t = T::new();
     let run = t.start("alice.testnet");
     t.ctx("alice.testnet", 0);
-    let e = fails(|| t.game.end_run(run.session_id, 10, "zz".into(), "00".into()));
+    let e = fails(|| t.game.end_run(run.session_id, 10, 0, "zz".into(), "00".into()));
     assert!(e.contains("hex"), "{e}");
+}
+
+#[test]
+fn end_run_checks_the_run_length_against_real_time() {
+    let mut t = T::new();
+    // A 10-second run (600 ticks) submitted 3 seconds after start_run: too fast.
+    let run = t.start("alice.testnet");
+    let sig = t.sign_ticks(GAME, "alice.testnet", run.session_id, run.seed, 10, 600);
+    t.advance(3);
+    t.ctx("alice.testnet", 0);
+    let e = fails(|| t.game.end_run(run.session_id, 10, 600, LOG_HASH.into(), sig.clone()));
+    assert!(e.contains("faster than it could be played"), "{e}");
+    // The ticks are signed: claiming a shorter run breaks the signature.
+    t.ctx("alice.testnet", 0);
+    let e = fails(|| t.game.end_run(run.session_id, 10, 100, LOG_HASH.into(), sig.clone()));
+    assert!(e.contains("Bad signature"), "{e}");
+    // Submitted more than 2 minutes after the run would have ended: too late.
+    t.advance(7 + 121);
+    t.ctx("alice.testnet", 0);
+    let e = fails(|| t.game.end_run(run.session_id, 10, 600, LOG_HASH.into(), sig.clone()));
+    assert!(e.contains("too late"), "{e}");
+    // Within the window: accepted.
+    let run = t.start("alice.testnet");
+    let sig = t.sign_ticks(GAME, "alice.testnet", run.session_id, run.seed, 10, 600);
+    t.advance(12);
+    t.ctx("alice.testnet", 0);
+    assert!(t.game.end_run(run.session_id, 10, 600, LOG_HASH.into(), sig).0 > 0);
+    // Longer than the 10-minute cap: refused.
+    let run = t.start("bob.testnet");
+    t.ctx("bob.testnet", 0);
+    let e = fails(|| t.game.end_run(run.session_id, 10, 36_001, LOG_HASH.into(), "00".repeat(64)));
+    assert!(e.contains("10-minute cap"), "{e}");
+}
+
+#[test]
+fn the_score_digest_matches_the_verifiers_known_answer() {
+    // Same inputs and answer as verifier/src/lib.rs (vector::known_answer_digest).
+    testing_env!(VMContextBuilder::new().build());
+    let d = score::score_digest(
+        &acc("frog-1.factory.popnear.testnet"),
+        &acc("popnear-player.testnet"),
+        42,
+        2_207_280_663,
+        &[0x11; 32],
+        140,
+        6_000,
+        &[0x22; 32],
+    );
+    assert_eq!(score::to_hex(&d), "3d89f033654de083647ec7f057f5cf00de18edda28631af83edd092be88880f4");
 }
 
 // ================================================================== mining
@@ -567,7 +621,7 @@ fn expire_run_moves_an_abandoned_deposit_into_the_vault() {
     // The player can no longer claim it.
     let sig = t.sign("bob.testnet", &run, 40);
     t.ctx("bob.testnet", 0);
-    assert!(fails(|| t.game.end_run(run.session_id, 40, LOG_HASH.into(), sig))
+    assert!(fails(|| t.game.end_run(run.session_id, 40, 0, LOG_HASH.into(), sig))
         .contains("Unknown or finished session"));
 }
 

@@ -54,6 +54,10 @@ const LEADERBOARD_SIZE: usize = 20;
 const MAX_RUNS_PER_PURCHASE: u32 = 100;
 const GAS_FOR_PARENT_FUND: Gas = Gas::from_tgas(5);
 const GAS_FOR_PARENT_CALLBACK: Gas = Gas::from_tgas(5);
+/// 10 minutes at 60 ticks per second: the longest run the game core allows.
+const MAX_RUN_TICKS: u32 = 36_000;
+/// Time allowed after a run's last tick to verify it and submit `end_run`.
+const END_GRACE_MS: u64 = 120_000;
 
 #[derive(BorshSerialize, BorshStorageKey)]
 #[borsh(crate = "near_sdk::borsh")]
@@ -412,11 +416,15 @@ impl Game {
 
     /// Ends the caller's run with a score signed by the verifier, then mines.
     /// The signature covers this game, the player, the session, its seed, the
-    /// game's config hash, the score and the input log's hash (see `score`).
+    /// game's config hash, the score, the run's length in ticks and the input
+    /// log's hash (see `score`). The run must not end sooner than it could be
+    /// played, nor more than `END_GRACE_MS` after it would have finished: that
+    /// limits how long a bot has to search for perfect inputs.
     pub fn end_run(
         &mut self,
         session_id: u64,
         score: u32,
+        ticks: u32,
         log_hash: String,
         signature: String,
     ) -> U128 {
@@ -427,6 +435,11 @@ impl Game {
             .cloned()
             .unwrap_or_else(|| env::panic_str("Unknown or finished session"));
         require!(session.player == player, "Not your session");
+        require!(ticks <= MAX_RUN_TICKS, "Run longer than the 10-minute cap");
+        let run_ms = ticks as u64 * 1_000 / 60;
+        let elapsed_ms = env::block_timestamp_ms().saturating_sub(session.started_at_ms);
+        require!(elapsed_ms >= run_ms, "Run submitted faster than it could be played");
+        require!(elapsed_ms <= run_ms + END_GRACE_MS, "Run submitted too late");
 
         let digest = score::score_digest(
             &env::current_account_id(),
@@ -435,6 +448,7 @@ impl Game {
             session.seed,
             &self.config_hash,
             score,
+            ticks,
             &score::hex32(&log_hash),
         );
         let sig = score::hex64(&signature);

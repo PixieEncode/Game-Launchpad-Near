@@ -1,0 +1,12 @@
+{
+  "display": {
+    "name": "Proof-of-Play score verifier"
+  },
+  "operations": ["verify", "public_key"],
+  "capabilities": {
+    "network": []
+  },
+  "signing_keys": [
+    {"path": "score", "type": "ed25519", "caller": "none"}
+  ]
+}

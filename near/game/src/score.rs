@@ -1,16 +1,20 @@
 //! The message the score verifier signs, and hex helpers.
 //!
-//! digest = sha256(borsh((game, player, session_id, seed, config_hash, score, log_hash)))
-//! with types (String, String, u64, u32, [u8; 32], u32, [u8; 32]). Borsh writes
+//! digest = sha256("pop-score-v1" ‖ borsh((game, player, session_id, seed, config_hash, score, ticks, log_hash)))
+//! with types (String, String, u64, u32, [u8; 32], u32, u32, [u8; 32]). Borsh writes
 //! a string as a u32 little-endian length then its bytes, integers as
 //! little-endian, and fixed arrays as raw bytes. The verifier signs the 32-byte
 //! digest with ed25519; `end_run` checks it with `env::ed25519_verify`.
 //!
 //! Binding the game account, player, session and seed stops a signature being
 //! reused anywhere else; binding the config hash and log hash ties the score to
-//! one game's rules and one exact input log.
+//! one game's rules and one exact input log. `ticks` is the run's length at 60
+//! ticks per second; `end_run` checks it against the time since `start_run`.
 
 use near_sdk::{borsh, env, AccountId};
+
+/// Fixed prefix of every signed score message (verifier/src/lib.rs composes the same).
+pub const PREFIX: &[u8] = b"pop-score-v1";
 
 pub fn score_message(
     game: &AccountId,
@@ -19,6 +23,7 @@ pub fn score_message(
     seed: u32,
     config_hash: &[u8; 32],
     score: u32,
+    ticks: u32,
     log_hash: &[u8; 32],
 ) -> Vec<u8> {
     borsh::to_vec(&(
@@ -28,6 +33,7 @@ pub fn score_message(
         seed,
         *config_hash,
         score,
+        ticks,
         *log_hash,
     ))
     .unwrap()
@@ -40,17 +46,21 @@ pub fn score_digest(
     seed: u32,
     config_hash: &[u8; 32],
     score: u32,
+    ticks: u32,
     log_hash: &[u8; 32],
 ) -> [u8; 32] {
-    let h = env::sha256(score_message(
+    let mut m = PREFIX.to_vec();
+    m.extend(score_message(
         game,
         player,
         session_id,
         seed,
         config_hash,
         score,
+        ticks,
         log_hash,
     ));
+    let h = env::sha256(m);
     let mut out = [0u8; 32];
     out.copy_from_slice(&h);
     out

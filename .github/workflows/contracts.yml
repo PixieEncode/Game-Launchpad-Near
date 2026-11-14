@@ -2,9 +2,9 @@ name: contracts
 
 on:
   push:
-    paths: ["near/**", ".github/workflows/contracts.yml"]
+    paths: ["near/**", "sim/**", "verifier/**", ".github/workflows/contracts.yml"]
   pull_request:
-    paths: ["near/**", ".github/workflows/contracts.yml"]
+    paths: ["near/**", "sim/**", "verifier/**", ".github/workflows/contracts.yml"]
 
 jobs:
   test:
@@ -32,3 +32,9 @@ jobs:
         run: cargo test --release
       - name: Sandbox tests
         run: cargo test -p pop-sandbox-tests
+      - name: Game core tests (sim)
+        working-directory: sim
+        run: cargo test --release
+      - name: Verifier tests
+        working-directory: verifier
+        run: cargo test --release

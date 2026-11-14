@@ -38,6 +38,29 @@ which is never committed.
 | Remix run: parent vault 0.014 → 0.016 NEAR (10% of the fee) | [qUbw7HX7…](https://testnet.nearblocks.io/txns/qUbw7HX7WNayPBNYvw9FG1bZz91uN1846GqShhRff7s) |
 | Deploy `demo.popnear.testnet` (10-run cap) | [DMDy9EAD…](https://testnet.nearblocks.io/txns/DMDy9EAD4Ksi7JYYb1iQf9T3nDo5aNKRZHmBjM6ANLJk) |
 
+## Phase 4: score verification on testnet
+
+`web/scripts/verifier-testnet.mjs` launches games, plays a run with a bot
+through the same WASM core the browser uses, signs it through
+`/api/verify-run`, and submits forged and honest results. Result on
+`vchk-4.factory.popnear.testnet` and `vchkb-2.demo.popnear.testnet`
+(dev verifier key):
+
+| Attempt | Result |
+| --- | --- |
+| Submitted faster than the run could be played | refused: "Run submitted faster than it could be played" |
+| Raised score (+10), same signature | refused: "Bad signature" |
+| Edited input log (another log hash) | refused: "Bad signature" |
+| Shorter run claimed (ticks − 60) | refused: "Bad signature" |
+| Run A's signature on another session of the same game | refused: "Bad signature" |
+| Run A's signature on a different game | refused: "Bad signature" |
+| Honest run (13 points, 1,226 ticks) | accepted, mined 17.28 coins |
+
+The verifier is deployed on OutLayer testnet as `popnear.testnet/pop-verifier`
+(wasm sha256 `1225c52e…5a18e`). `vchk-3.factory…` and `vchkb-1.demo…` were
+launched with a game build missing the `pop-score-v1` prefix; they accept no
+scores and are not used.
+
 ## Libraries added during the hackathon
 
 | Library | Version | Where | Why |
@@ -50,6 +73,13 @@ which is never committed.
 | cargo-near | 0.23.0 (tool) | dev machine, CI | Builds contract WASM |
 | near-workspaces | 0.24 | `near/tests` | Sandbox tests on a local NEAR node |
 | tokio, anyhow, serde_json, sha2, hex | 1, 1, 1, 0.10, 0.4 | `near/tests` | Async runtime and helpers for the sandbox tests |
+| serde, serde_json, sha2 | 1, 1, 0.10 | `sim` | Config parsing, snapshots, rules and log hashes |
+| wit-bindgen, base64 | 0.36, 0.22 | `verifier` | OutLayer signing-key bindings; input log decoding |
+| near-api-js | 7.5.3 | `web` | NEAR calls from scripts (and the app from Phase 5) |
+| outlayer-cli | 0.2.3 (tool) | dev machine (WSL) | Uploads and deploys the verifier |
+
+`verifier/wit/signing-keys.wit` is copied unchanged from OutLayer's
+`worker/wit/deps/signing-keys.wit` (github.com/out-layer/outlayer).
 
 ## AI-generated code
 
@@ -58,4 +88,5 @@ which is never committed.
 | Phase 0 repo setup: LICENSE, this file, folder stubs | `LICENSE`, `NOTES.md`, `near/`, `sim/`, `verifier/` | Claude Code (Claude Opus 5.5) |
 | Phase 1 game contract and its unit tests | `near/Cargo.toml`, `near/game/` | Claude Code (Claude Opus 5.5) |
 | Phase 2 factory contract, its tests, testnet deploy | `near/factory/`, `web/src/lib/contracts/deployment.testnet.json` | Claude Code (Claude Opus 5.5) |
+| Phase 4 deterministic game core, WASM API, browser renderers, verifier, `/api/verify-run`, `end_run` time check | `sim/`, `verifier/`, `web/public/games/`, `web/src/lib/verify-run.ts`, `web/src/app/api/verify-run/`, `web/scripts/verifier-testnet.mjs`, `near/game/src/` | Claude Code (Claude Opus 5.5) |
 | Phase 3 floor simulation, scenario runner, sandbox tests, CI | `near/game/src/tests/sim.rs`, `near/simulation/`, `near/tests/`, `.github/workflows/` | Claude Code (Claude Opus 5.5) |

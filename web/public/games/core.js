@@ -47,6 +47,55 @@
   // Low-end hint: phones with few cores skip bloom. ?lowfx in the URL forces it.
   var LOW_FX = /[?&#]lowfx\b/.test(location.search) || ((navigator.hardwareConcurrency || 8) <= 4 && "ontouchstart" in window);
 
+  // ---------------------------------------------------------------------------
+  // Deterministic core (sim/, compiled to pop_sim.wasm). It owns everything that
+  // changes the score; templates only draw its snapshots. See sim/src/wasm.rs.
+  // ---------------------------------------------------------------------------
+  var TICK_MS = 1000 / 60;
+  var Sim = { mod: null, promise: null, enc: new TextEncoder(), dec: new TextDecoder() };
+  function loadSim() {
+    if (Sim.promise) return Sim.promise;
+    Sim.promise = fetch(new URL("pop_sim.wasm", location.href).href)
+      .then(function (r) {
+        if (!r.ok) throw new Error("pop_sim.wasm: HTTP " + r.status);
+        return r.arrayBuffer();
+      })
+      .then(function (b) {
+        return WebAssembly.instantiate(b, {});
+      })
+      .then(function (res) {
+        Sim.mod = res.instance.exports;
+        return Sim.mod;
+      });
+    return Sim.promise;
+  }
+  function simPut(bytes) {
+    var p = Sim.mod.pop_alloc(bytes.length);
+    new Uint8Array(Sim.mod.memory.buffer, p, bytes.length).set(bytes);
+    return p;
+  }
+  function simOut() {
+    return new Uint8Array(Sim.mod.memory.buffer, Sim.mod.pop_out_ptr(), Sim.mod.pop_out_len()).slice();
+  }
+  function simInit(cfg, seed) {
+    var bytes = Sim.enc.encode(JSON.stringify(cfg));
+    var p = simPut(bytes);
+    var rc = Sim.mod.pop_init(p, bytes.length, seed >>> 0);
+    Sim.mod.pop_free(p, bytes.length);
+    if (rc !== 0) throw new Error("Game rules rejected: " + Sim.dec.decode(simOut()));
+  }
+  function simFrame() {
+    Sim.mod.pop_frame();
+    return JSON.parse(Sim.dec.decode(simOut()));
+  }
+  function simLogBase64() {
+    Sim.mod.pop_log();
+    var b = simOut();
+    var s = "";
+    for (var i = 0; i < b.length; i++) s += String.fromCharCode(b[i]);
+    return btoa(s);
+  }
+
   function post(msg) {
     msg.source = "pop";
     if (embedded) {
@@ -246,7 +295,31 @@
       return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
     };
   }
-  POP.util = { clamp: clamp, shade: shade, hexToInt: hexToInt, luminance: luminance };
+  /**
+   * Keeps one display object per core entity: creates new ones, updates live
+   * ones and removes the ones the core dropped. `make(ent)` returns an object
+   * (or a {main, ...} bundle with a destroy()), `draw(obj, ent)` positions it,
+   * `gone(obj, id)` removes it (default: destroy).
+   */
+  function syncEntities(map, ents, kinds, make, draw, gone) {
+    var seen = {};
+    for (var i = 0; i < ents.length; i++) {
+      var e = ents[i];
+      if (kinds.indexOf(e.k) === -1) continue;
+      seen[e.id] = true;
+      var o = map[e.id];
+      if (!o) o = map[e.id] = make(e);
+      draw(o, e);
+    }
+    for (var id in map) {
+      if (!seen[id]) {
+        if (gone) gone(map[id], id);
+        else if (map[id] && map[id].destroy) map[id].destroy();
+        delete map[id];
+      }
+    }
+  }
+  POP.util = { clamp: clamp, shade: shade, hexToInt: hexToInt, luminance: luminance, sync: syncEntities };
 
   // ---------------------------------------------------------------------------
   // Images: inline SVG or data: URL -> canvas at the slot's nominal size
@@ -1258,6 +1331,10 @@
       this.shakeI = 0;
       this.realMs = 0;
       this.slowFrames = 0;
+      this.simAcc = 0;
+      this.simSeed = null;
+      this.pendingTap = false;
+      this.lastSnap = null;
       this.lowPerf = !!rt.lowPerf;
       this.overAt = Infinity;
       this.tweens.timeScale = 1;
@@ -1797,6 +1874,70 @@
       });
     }
 
+    /** Steps the core at 60 ticks per game-second and hands the template what to draw. */
+    simAdvance(gdtMs) {
+      var ctx = this.ctx;
+      var inp = ctx.input;
+      var events = [];
+      var steps = 0;
+      this.simAcc += gdtMs;
+      while (this.simAcc >= TICK_MS && !this.ended) {
+        this.simAcc -= TICK_MS;
+        if (++steps > 4) {
+          this.simAcc = 0; // a long stall: drop the backlog rather than race to catch up
+          break;
+        }
+        var f = 0;
+        if (inp.pointerDown) f |= 1;
+        if (inp.left) f |= 2;
+        if (inp.right) f |= 4;
+        if (inp.up) f |= 8;
+        if (inp.action) f |= 16;
+        if (this.pendingTap) {
+          f |= 32;
+          this.pendingTap = false;
+        }
+        var x = Math.max(0, Math.min(480, Math.round(inp.pointerX || 0)));
+        Sim.mod.pop_step(f, x);
+        var fr = simFrame();
+        this.lastSnap = fr.snapshot;
+        for (var i = 0; i < fr.events.length; i++) {
+          events.push(fr.events[i]);
+          this.simEvent(fr.events[i]);
+        }
+      }
+      if (this.lastSnap && this.tpl.render) this.tpl.render(ctx, this.lastSnap, events, gdtMs);
+    }
+
+    simEvent(ev) {
+      var ctx = this.ctx;
+      switch (ev.e) {
+        case "score":
+          this.scoreAdd(ev.n, ev.x, ev.y, {});
+          break;
+        case "collect":
+          ctx.collect(ev.x, ev.y);
+          break;
+        case "near_miss":
+          this.simNearMiss(ev.x, ev.y);
+          break;
+        case "game_over":
+          this.endRun(ev.timeout ? W / 2 : ev.x, ev.timeout ? H / 2 : ev.y);
+          break;
+      }
+    }
+
+    /** The core already decided this near miss (and its +1); just show it. */
+    simNearMiss(x, y) {
+      if (this.ended) return;
+      this.lastNear = this.t;
+      var txt = !this.meme.enabled || Math.random() < 0.45 ? "CLOSE!" : this.phrase("good");
+      this.popup(txt, x, (typeof y === "number" ? y : H / 2) - 36, { kind: "meme", color: "#ffffff" });
+      this.scoreAdd(1, x, y, { popup: false, sfx: false, vfx: false });
+      this.slowmo(0.4, 160);
+      playSfx("blip", 1 + Math.min(this.combo, 10) * 0.05);
+    }
+
     nearMiss(x, y) {
       if (this.phase !== "live" || this.ended) return false;
       if (this.t - this.lastNear < 0.7) return false;
@@ -1886,12 +2027,22 @@
           this.applyPhase();
           ctx.elapsedMs = 0;
           this.realMs = 0;
+          // Seed from the parent's start message (the chain's seed for a paid run).
+          this.simSeed = window.POP_SEED != null ? window.POP_SEED >>> 0 : (Math.random() * 4294967296) >>> 0;
+          try {
+            simInit(this.cfg, this.simSeed);
+          } catch (e) {
+            post({ type: "error", message: String(e && e.message ? e.message : e) });
+            this.broken = true;
+            return;
+          }
+          this.simAcc = TICK_MS; // the starting press plays on the first tick
+          this.pendingTap = !inp.move; // Left/Right only start the run
           startMusic();
           this.bigCallout(this.meme.enabled ? "LFG!" : "GO!", "#ffffff", 70);
-          if (this.tpl.onInput && !inp.move) this.tpl.onInput(ctx, inp);
           break;
         case "live":
-          if (this.tpl.onInput) this.tpl.onInput(ctx, inp);
+          this.pendingTap = true;
           break;
         case "over":
           if (!embedded && this.t - this.overAt > 0.5) rt.arm();
@@ -1929,7 +2080,14 @@
       var score = ctx.score;
       var isBest = this.best !== null && score > this.best;
       rt.best = Math.max(this.best || 0, score);
-      post({ type: "gameOver", score: score, durationMs: Math.round(this.realMs) });
+      post({
+        type: "gameOver",
+        score: Sim.mod ? Sim.mod.pop_score() : score,
+        durationMs: Math.round(this.realMs),
+        seed: this.simSeed,
+        ticks: Sim.mod ? Sim.mod.pop_tick() : 0,
+        log: Sim.mod ? simLogBase64() : "",
+      });
       this.time.delayedCall(760, function () {
         self.showDeath(score, isBest);
       });
@@ -2151,7 +2309,7 @@
 
       try {
         if (live) {
-          if (!frozen) this.tpl.update(ctx, gdtMs);
+          if (!frozen) this.simAdvance(gdtMs);
         } else if (this.dying) {
           if (!frozen && this.tpl.dying) this.tpl.dying(ctx, gdtMs);
         } else if (this.phase !== "over" && this.tpl.idle) this.tpl.idle(ctx, dtMs);
@@ -2278,7 +2436,7 @@
     rt.ready = false;
     var gen = ++rt.gen;
     document.body.style.background = cfg.palette.skyBottom;
-    Promise.all([buildTextures(cfg, assets, gen), loadSounds(cfg, assets), loadFonts()])
+    Promise.all([buildTextures(cfg, assets, gen), loadSounds(cfg, assets), loadFonts(), loadSim()])
       .then(function (res) {
         if (gen !== rt.gen) return;
         var tex = res[0];

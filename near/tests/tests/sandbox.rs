@@ -26,9 +26,9 @@ fn verifier_pk() -> String {
 }
 
 /// The score message from near/game/src/score.rs, rebuilt independently here:
-/// sha256(borsh(game, player, session_id, seed, config_hash, score, log_hash)).
-fn sign_score(game: &str, player: &str, session_id: u64, seed: u32, score: u32) -> String {
-    let mut m = Vec::new();
+/// sha256("pop-score-v1" ‖ borsh(game, player, session_id, seed, config_hash, score, ticks, log_hash)).
+fn sign_score(game: &str, player: &str, session_id: u64, seed: u32, score: u32, ticks: u32) -> String {
+    let mut m = b"pop-score-v1".to_vec();
     for s in [game, player] {
         m.extend_from_slice(&(s.len() as u32).to_le_bytes());
         m.extend_from_slice(s.as_bytes());
@@ -37,6 +37,7 @@ fn sign_score(game: &str, player: &str, session_id: u64, seed: u32, score: u32) 
     m.extend_from_slice(&seed.to_le_bytes());
     m.extend_from_slice(&hex::decode(CONFIG_HASH).unwrap());
     m.extend_from_slice(&score.to_le_bytes());
+    m.extend_from_slice(&ticks.to_le_bytes());
     m.extend_from_slice(&hex::decode(LOG_HASH).unwrap());
     let digest = Sha256::digest(&m);
     hex::encode(verifier().sign(&digest).to_bytes())
@@ -142,12 +143,14 @@ async fn play(env: &Env, player: &Account, game: &str, score: u32) -> anyhow::Re
 async fn end(player: &Account, game: &str, run: &Value, score: u32) -> anyhow::Result<u128> {
     let session_id = run["session_id"].as_u64().unwrap();
     let seed = run["seed"].as_u64().unwrap() as u32;
-    let sig = sign_score(game, player.id().as_str(), session_id, seed, score);
+    // A 0-tick run: the sandbox clock barely moves between start_run and end_run.
+    let sig = sign_score(game, player.id().as_str(), session_id, seed, score, 0);
     let mined: Value = player
         .call(&game.parse()?, "end_run")
         .args_json(json!({
             "session_id": session_id,
             "score": score,
+            "ticks": 0,
             "log_hash": LOG_HASH,
             "signature": sig,
         }))
