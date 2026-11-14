@@ -21,7 +21,7 @@ On Windows the ABI step fails to link, hence `--no-abi`.
 
 | Method | Deposit | What it does |
 | --- | --- | --- |
-| `new(name, symbol, creator, parent, verifier_pk, config_hash, params)` | | Called once by the factory |
+| `new(name, symbol, creator, parent, verifier_pk, config_hash, params)` | | Called once by the factory. `verifier_pk` is the raw ed25519 key as 64 hex characters |
 | `buy_runs(count, account_id?)` | count × fee (+ registration if new) | Prepays runs for the caller or another account |
 | `start_run()` | fee (+ registration if new), or 0 to use a credit | Splits the fee, opens a session, returns `{session_id, seed}` |
 | `end_run(session_id, score, log_hash, signature)` | | Checks the verifier's signature, adds the deposit to the vault, mines |

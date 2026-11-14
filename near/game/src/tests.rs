@@ -60,8 +60,7 @@ impl T {
 
     fn with(params: Params, parent: Option<&str>) -> T {
         let key = SigningKey::from_bytes(&[7u8; 32]);
-        let pk = PublicKey::from_parts(CurveType::ED25519, key.verifying_key().to_bytes().to_vec())
-            .unwrap();
+        let pk = score::to_hex(&key.verifying_key().to_bytes());
         let now_ms = 1_800_000_000_000;
         testing_env!(VMContextBuilder::new()
             .current_account_id(acc(GAME))

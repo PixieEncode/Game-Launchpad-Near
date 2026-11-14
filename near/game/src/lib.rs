@@ -40,8 +40,8 @@ use near_sdk::borsh::BorshSerialize;
 use near_sdk::json_types::{U128, U64};
 use near_sdk::store::{Lazy, LookupMap, Vector};
 use near_sdk::{
-    assert_one_yocto, env, near, require, AccountId, BorshStorageKey, CurveType, Gas, NearToken,
-    PanicOnDefault, Promise, PromiseError, PromiseOrValue, PublicKey,
+    assert_one_yocto, env, near, require, AccountId, BorshStorageKey, Gas, NearToken,
+    PanicOnDefault, Promise, PromiseError, PromiseOrValue,
 };
 
 pub use events::{EventKind, GameEvent};
@@ -185,7 +185,8 @@ pub struct Stats {
     pub creator: AccountId,
     pub parent: Option<AccountId>,
     pub config_hash: String,
-    pub verifier_pk: PublicKey,
+    /// ed25519 public key allowed to sign scores, 64 hex characters.
+    pub verifier_pk: String,
     pub created_at_ms: u64,
     pub vault: U128,
     pub pending: U128,
@@ -258,23 +259,18 @@ impl Game {
         symbol: String,
         creator: AccountId,
         parent: Option<AccountId>,
-        verifier_pk: PublicKey,
+        verifier_pk: String,
         config_hash: String,
         params: Params,
     ) -> Self {
         require!(!name.is_empty() && name.len() <= 64, "Name must be 1-64 characters");
         require!(!symbol.is_empty() && symbol.len() <= 12, "Symbol must be 1-12 characters");
-        require!(
-            verifier_pk.curve_type() == CurveType::ED25519,
-            "Verifier key must be ed25519"
-        );
         params.validate();
         let mut params = params;
         if parent.is_none() {
             params.parent_bps = 0;
         }
-        let mut pk = [0u8; 32];
-        pk.copy_from_slice(&verifier_pk.as_bytes()[1..]);
+        let pk = score::hex32(&verifier_pk);
 
         let mut this = Self {
             token: FungibleToken::new(StorageKey::Accounts),
@@ -329,7 +325,7 @@ impl Game {
         let attached = env::attached_deposit().as_yoctonear();
         require!(
             attached >= need,
-            format!("Attach {} yoctoNEAR for {} runs", need, count)
+            "Attach count x entry fee, plus registration_cost for a new account"
         );
         self.ensure_registered(&who);
         let mut player = self.players.get(&who).cloned().unwrap_or_default();
@@ -354,7 +350,7 @@ impl Game {
             let need = fee + self.registration_needed(&player);
             require!(
                 attached >= need,
-                format!("Attach {} yoctoNEAR to start a run", need)
+                "Attach run_cost to start a run"
             );
             self.ensure_registered(&player);
             refund(attached - need);
@@ -563,7 +559,7 @@ impl Game {
         let attached = env::attached_deposit().as_yoctonear();
         require!(
             attached >= need,
-            format!("Attach at least {} yoctoNEAR", need)
+            "Attach at least quote_buy, plus registration_cost for a new account"
         );
         self.ensure_registered(&buyer);
         self.sold += amount;
@@ -675,8 +671,7 @@ impl Game {
             creator: self.creator.clone(),
             parent: self.parent.clone(),
             config_hash: score::to_hex(&self.config_hash),
-            verifier_pk: PublicKey::from_parts(CurveType::ED25519, self.verifier_pk.to_vec())
-                .unwrap(),
+            verifier_pk: score::to_hex(&self.verifier_pk),
             created_at_ms: self.created_at_ms,
             vault: U128(self.vault),
             pending: U128(self.pending),

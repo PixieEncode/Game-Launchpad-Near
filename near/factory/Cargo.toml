@@ -1,0 +1,16 @@
+[package]
+name = "pop-factory"
+version = "0.1.0"
+edition = "2021"
+description = "Proof-of-Play factory: launches each game contract at its own sub-account and keeps the registry"
+license = "MIT"
+repository = "https://github.com/PixieEncode/Game-Launchpad-Near"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+near-sdk = "5.30"
+
+[dev-dependencies]
+near-sdk = { version = "5.30", features = ["unit-testing"] }
