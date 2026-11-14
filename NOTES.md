@@ -7,6 +7,17 @@ Phase 8 copies this file into the README.
 Everything before the `pre-hackathon` tag is prior work from the Monad Blitz
 version. Only changes after that tag are hackathon work.
 
+## Testnet accounts
+
+| Account | Role |
+| --- | --- |
+| [popnear.testnet](https://testnet.nearblocks.io/address/popnear.testnet) | Owns the factories. Phase 2 deploys them as sub-accounts, e.g. `factory.popnear.testnet` and `demo.popnear.testnet` |
+| [popnear-player.testnet](https://testnet.nearblocks.io/address/popnear-player.testnet) | Test player |
+
+Both were created through the testnet faucet with 10 NEAR each. Their keys
+live in `~/.near-credentials/testnet/` on the developer's machine, never in
+this repo.
+
 ## Libraries added during the hackathon
 
 | Library | Version | Where | Why |
